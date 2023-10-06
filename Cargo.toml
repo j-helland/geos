@@ -1,13 +1,16 @@
 [package]
-name = "geo-shit"
+name = "geos"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+atty = "0.2.14"
 clap = { version = "4.4.6", features = ["derive"] }
+clap-stdin = "0.2.1"
 geo = "0.26.0"
 geo-types = "0.7.11"
+itertools = "0.11.0"
 s2 = "0.0.12"
 wkt = "0.10.3"
