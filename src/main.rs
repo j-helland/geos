@@ -4,8 +4,8 @@ use clap::{Parser, Subcommand, Args, ValueEnum};
 use clap_stdin::MaybeStdin;
 use s2::cellid::CellID;
 use wkt::{TryFromWkt, ToWkt};
-use geo::{BoundingRect, LineInterpolatePoint, Intersects};
-use geo_types::{Coord, Point, Geometry, Line, Rect, GeometryCollection};
+use geo::{BoundingRect, LineInterpolatePoint, Intersects, Triangle, TriangulateEarcut};
+use geo_types::{Coord, Point, Geometry, Line, Rect, GeometryCollection, Polygon};
 
 
 #[derive(Parser)]
@@ -74,8 +74,22 @@ enum GeomCommands {
         lerp: f64,
 
         #[arg(short, long, default_value_t = SplitFormat::CSV)]
-        format: SplitFormat 
+        format: SplitFormat,
     },
+    Triangulate {
+        #[arg(last = true)]
+        wkt: MaybeStdin<String>,
+
+        #[arg(short, long, default_value_t = SplitFormat::CSV)]
+        format: SplitFormat,
+    },
+}
+
+fn _fmt<T: ValueEnum>(t: &T, f: &mut Formatter<'_>) -> std::fmt::Result {
+    t.to_possible_value()
+        .expect("no values are skipped")
+        .get_name()
+        .fmt(f)
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -86,10 +100,7 @@ enum S2CellFormat {
 }
 impl Display for S2CellFormat {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.to_possible_value()
-            .expect("no values are skipped")
-            .get_name()
-            .fmt(f)
+        _fmt(self, f)
     }
 }
 
@@ -100,12 +111,21 @@ enum SplitFormat {
 }
 impl Display for SplitFormat {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.to_possible_value()
-            .expect("no values are skipped")
-            .get_name()
-            .fmt(f)
+        _fmt(self, f)
     }
 }
+
+#[derive(Debug, Clone, ValueEnum)]
+enum SplitStrategy {
+    Bbox,
+    Triangulate,
+}
+impl Display for SplitStrategy {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        _fmt(self, f)
+    }
+}
+
 
 /**
  * Computes an S2 cell covering of the given geometry by first computing a bounding box and then
@@ -188,6 +208,12 @@ fn partition_region(geometry: Geometry, lerp: f64) -> GeometryCollection {
     GeometryCollection::new_from(partitions)
 }
 
+fn triangulate_region(geometry: Geometry) -> GeometryCollection {
+    let polygon: Polygon = geometry.try_into().unwrap();
+    let triangles: Vec<Geometry> = polygon.earcut_triangles_iter().map(Triangle::into).collect();
+    GeometryCollection::new_from(triangles)
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -216,18 +242,29 @@ fn main() {
                 Some(GeomCommands::Split { wkt, lerp, format }) => {
                     let geometry = Geometry::<f64>::try_from_wkt_str(wkt).unwrap();
                     let partitions = partition_region(geometry, *lerp);
-                    match format {
-                        SplitFormat::CSV => {
-                            partitions.iter().for_each(|p| println!("{}", p.wkt_string()));
-                        }
-                        SplitFormat::WKT => {
-                            println!("{}", partitions.wkt_string());
-                        }
-                    }
+                    fmt_geometry(format, &partitions);
                 }
+
+                Some(GeomCommands::Triangulate { wkt, format }) => {
+                    let geometry = Geometry::<f64>::try_from_wkt_str(wkt).unwrap();
+                    let triangles = triangulate_region(geometry);
+                    fmt_geometry(format, &triangles);
+                }
+
                 None => {}
             }
         }
         None => {}
+    }
+}
+
+fn fmt_geometry(format: &SplitFormat, gc: &GeometryCollection) {
+    match format {
+        SplitFormat::CSV => {
+            gc.iter().for_each(|p| println!("{}", p.wkt_string()));
+        }
+        SplitFormat::WKT => {
+            println!("{}", gc.wkt_string());
+        }
     }
 }
