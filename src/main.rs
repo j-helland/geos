@@ -1,14 +1,21 @@
-use std::fmt::{Display, Formatter};
+mod geos_rand;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
-use clap_stdin::MaybeStdin;
-use geo::{
-    Area, BooleanOps, BoundingRect, Intersects, LineInterpolatePoint, Triangle, TriangulateEarcut,
+use std::{
+    error::Error,
+    fmt::{Display, Formatter},
+    io,
 };
+
+use clap::{command, Args, Parser, Subcommand, ValueEnum};
+use clap_stdin::MaybeStdin;
+use geo::{Area, BooleanOps, BoundingRect, Intersects, Triangle, TriangulateEarcut};
 use geo_types::{Coord, Geometry, GeometryCollection, Line, Point, Polygon, Rect};
+use geos_rand::{create_rng, lerp};
 use itertools::Itertools;
 use s2::cellid::CellID;
 use wkt::{ToWkt, TryFromWkt};
+
+use crate::geos_rand::{GeoSampler, PolygonalSampler, UniformSampler};
 
 #[derive(Parser)]
 #[command(name = "GeoS")]
@@ -29,6 +36,7 @@ struct Cli {
 enum Commands {
     S2(S2Args),
     Geom(GeomArgs),
+    Rand(RandArgs),
 }
 
 #[derive(Debug, Args)]
@@ -47,6 +55,15 @@ struct S2Args {
 struct GeomArgs {
     #[command(subcommand)]
     command: Option<GeomCommands>,
+}
+
+#[derive(Debug, Args)]
+#[command(about = "Commands involving RNG.")]
+#[command(args_conflicts_with_subcommands = false)]
+#[command(arg_required_else_help = true)]
+struct RandArgs {
+    #[command(subcommand)]
+    command: Option<RandCommands>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -107,7 +124,26 @@ enum GeomCommands {
         #[arg(last = true)]
         wkt: MaybeStdin<String>,
 
-        #[arg(short, long, default_value_t = OutputFormat::CSV, help = "By default, outputs each subdivision region as a WKT POLYGON on separate lines. Specifying the wkt format will consolidate these lines into a WKT GEOMETRYCOLLECTION and output a single line.")]
+        #[arg(short, long, default_value_t = OutputFormat::CSV, help = "By default, outputs each subdivision region as a WKT POLYGON on separate lines. Specifying the oneline format will consolidate these lines into a WKT GEOMETRYCOLLECTION and output a single line.")]
+        format: OutputFormat,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum RandCommands {
+    Point {
+        #[arg(short, long, help = "TODO")]
+        wkt: Option<String>,
+
+        #[arg(
+            short,
+            long,
+            default_value_t = 1,
+            help = "Number of samples to return."
+        )]
+        num_samples: u64,
+
+        #[arg(short, long, default_value_t = OutputFormat::CSV, help = "By default, outputs each sampled point on a separate line. Specifying the oneline format will consolidate lines into a WKT GEOMETRYCOLLECTION on a single line.")]
         format: OutputFormat,
     },
 }
@@ -217,8 +253,8 @@ fn partition_region(
     };
 
     // Forward axes.
-    let l01 = Line { start: c0, end: c1 };
-    let l32 = Line { start: c3, end: c2 };
+    let l01_lerp = |t| lerp(t, c0, c1);
+    let l32_lerp = |t| lerp(t, c3, c2);
 
     // Sweep in the c0 -> c1 direction.
     let mut fx = 0.0;
@@ -227,14 +263,8 @@ fn partition_region(
         // This is a line in the c0 -> c3 direction that is lerped towards c1. We use this to
         // compute the upper right corner of the rect.
         let lp = Line {
-            start: l01
-                .line_interpolate_point(fx + edge_proportion)
-                .unwrap()
-                .into(),
-            end: l32
-                .line_interpolate_point(fx + edge_proportion)
-                .unwrap()
-                .into(),
+            start: l01_lerp(fx + edge_proportion),
+            end: l32_lerp(fx + edge_proportion),
         };
 
         // Sweep in the c0 -> c3 direction.
@@ -242,8 +272,8 @@ fn partition_region(
         while fy < edge_budget {
             // The rect can be defined in terms of two corners.
             let partition = Rect::new(
-                lp_prev.line_interpolate_point(fy).unwrap(),
-                lp.line_interpolate_point(fy + edge_proportion).unwrap(),
+                lerp(fy, lp_prev.start, lp_prev.end),
+                lerp(fy + edge_proportion, lp.start, lp.end),
             );
 
             // Not all partitions computed from the minimal bounding box intersect with the
@@ -276,17 +306,24 @@ fn partition_region(
     GeometryCollection::new_from(partitions)
 }
 
-fn triangulate_region(geometry: Geometry) -> GeometryCollection {
-    let polygon: Polygon = geometry.try_into().unwrap();
-    let triangles: Vec<Geometry> = polygon
-        .earcut_triangles_iter()
-        .map(Triangle::into)
-        .collect();
-    GeometryCollection::new_from(triangles)
+fn collect_args() -> Vec<String> {
+    // Args read from the commandline.
+    let mut args: Vec<String> = std::env::args().collect();
+
+    // Args possibly read from stdin via redirection. This allows for piping values from other
+    // commands.
+    if !atty::is(atty::Stream::Stdin) {
+        // Redirection has occurred.
+        let stdin = io::stdin();
+        let stdin_args: Vec<String> = stdin.lines().map(Result::unwrap).collect();
+        args.extend_from_slice(stdin_args.as_slice());
+    }
+
+    args
 }
 
-fn main() {
-    let cli = Cli::parse();
+fn main() -> Result<(), Box<dyn Error>> {
+    let cli = Cli::parse_from(collect_args().iter());
 
     match &cli.command {
         // Commands that input and/or output S2 cells.
@@ -305,7 +342,7 @@ fn main() {
                         S2CellFormat::Quad => format!("{:#?}", c),
                     };
 
-                    let geometry = Geometry::<f64>::try_from_wkt_str(wkt).unwrap();
+                    let geometry = Geometry::<f64>::try_from_wkt_str(wkt)?;
                     let cover = get_s2_covering(geometry, *level, 128);
 
                     match format {
@@ -325,7 +362,7 @@ fn main() {
 
         // Commands that input/output WKT geometries.
         Some(Commands::Geom(geom)) => {
-            let fmt_geometry = |fmt: &OutputFormat, gc: &GeometryCollection| match fmt {
+            let fmt_geometry = |fmt: &OutputFormat, gc: GeometryCollection| match fmt {
                 OutputFormat::CSV => {
                     gc.iter().for_each(|p| println!("{}", p.wkt_string()));
                 }
@@ -342,20 +379,72 @@ fn main() {
                     format,
                     threshold,
                 }) => {
-                    let geometry = Geometry::<f64>::try_from_wkt_str(wkt).unwrap();
+                    let geometry = Geometry::<f64>::try_from_wkt_str(wkt)?;
                     let partitions = partition_region(geometry, *edge_proportion, *threshold);
-                    fmt_geometry(format, &partitions);
+                    fmt_geometry(format, partitions);
                 }
 
                 Some(GeomCommands::Triangulate { wkt, format }) => {
-                    let geometry = Geometry::<f64>::try_from_wkt_str(wkt).unwrap();
-                    let triangles = triangulate_region(geometry);
-                    fmt_geometry(format, &triangles);
+                    let geometry = Geometry::<f64>::try_from_wkt_str(wkt)?;
+                    let polygon: Polygon = geometry.try_into()?;
+                    let triangles: Vec<Geometry> = polygon
+                        .earcut_triangles_iter()
+                        .into_iter()
+                        .map(Triangle::into)
+                        .collect();
+                    fmt_geometry(format, GeometryCollection::new_from(triangles));
                 }
 
                 None => {}
             }
         }
+
+        Some(Commands::Rand(rand)) => {
+            let mut rng = create_rng(128);
+
+            match &rand.command {
+                Some(RandCommands::Point {
+                    wkt,
+                    num_samples,
+                    format,
+                }) => {
+                    let coords: Vec<Coord> = match wkt {
+                        None => (0..*num_samples)
+                            .map(|_| UniformSampler.sample_coord(&mut rng))
+                            .collect(),
+
+                        Some(wkt) => {
+                            let geometry = Geometry::<f64>::try_from_wkt_str(wkt)?;
+                            let sampler = PolygonalSampler::new(geometry.try_into()?);
+                            (0..*num_samples)
+                                .map(|_| sampler.sample_coord(&mut rng))
+                                .collect()
+                        }
+                    };
+
+                    let samples: Vec<Geometry> = coords
+                        .into_iter()
+                        .map(Point::from)
+                        .map(Geometry::from)
+                        .collect();
+
+                    match format {
+                        OutputFormat::CSV => {
+                            samples.iter().for_each(|p| println!("{}", p.wkt_string()))
+                        }
+
+                        OutputFormat::Oneline => {
+                            println!("{}", GeometryCollection::new_from(samples).wkt_string())
+                        }
+                    }
+                }
+
+                None => {}
+            }
+        }
+
         None => {}
     }
+
+    Ok(())
 }
