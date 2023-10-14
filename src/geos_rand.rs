@@ -93,29 +93,20 @@ impl PolygonalSampler {
     }
 }
 
-/**
- * Uniformly samples coordinates within a triangular region on the Earth's surface.
- * 1. Select a random vertex.
- * 2. Sample a point along the edge opposing the vertex.
- * 3. Sample a point along the edge connecting the vertex and previously sampled point.
- */
+/** Uniformly samples coordinates within a triangular region on the Earth's surface. */
 fn sample_point_in_triangle<R: Rng>(rng: &mut R, triangle: Triangle) -> Point {
-    let dist_vertex: Uniform<usize> = Uniform::new(0, 3);
     let dist: Uniform<f64> = Uniform::new_inclusive(0.0, 1.0);
+    let r1_sqrt = f64::sqrt(dist.sample(rng));
+    let r2 = dist.sample(rng);
 
     // Randomly select a starting triangle vertex. Call this vertex `a`.
     let vertices = triangle.to_array();
-    let idx = dist_vertex.sample(rng);
-    let a = vertices[idx];
-    let b = vertices[(idx + 1) % 3];
-    let c = vertices[(idx + 2) % 3];
+    let na: NVec = vertices[0].into();
+    let nb: NVec = vertices[1].into();
+    let nc: NVec = vertices[2].into();
 
-    // Select a random point along the edge opposing vertex `a`.
-    let p_bc = lerp(dist.sample(rng), b, c);
-
-    // Select a random point along the line connecting the selected vertex and the point on the
-    // opposing edge.
-    lerp(dist.sample(rng), a, p_bc).into()
+    let c: Coord = ((1.0 - r1_sqrt) * na + r1_sqrt * (1.0 - r2) * nb + r2 * r1_sqrt * nc).into();
+    c.into()
 }
 
 /**

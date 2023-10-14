@@ -9,10 +9,13 @@ use std::{
 use clap::{command, Args, Parser, Subcommand, ValueEnum};
 use clap_stdin::MaybeStdin;
 use geo::{Area, BooleanOps, BoundingRect, Intersects, Triangle, TriangulateEarcut};
-use geo_types::{Coord, Geometry, GeometryCollection, Line, Point, Polygon, Rect};
+use geo_types::{
+    polygon, Coord, Geometry, GeometryCollection, Line, Point, Polygon,
+    Rect,
+};
 use geos_rand::{create_rng, lerp};
 use itertools::Itertools;
-use s2::cellid::CellID;
+use s2::{cell::Cell, cellid::CellID, latlng::LatLng};
 use wkt::{ToWkt, TryFromWkt};
 
 use crate::geos_rand::{GeoSampler, PolygonalSampler, UniformSampler};
@@ -62,6 +65,9 @@ struct GeomArgs {
 #[command(args_conflicts_with_subcommands = false)]
 #[command(arg_required_else_help = true)]
 struct RandArgs {
+    #[arg(short, long, default_value_t = 0, help = "Random seed to use")]
+    seed: u64,
+
     #[command(subcommand)]
     command: Option<RandCommands>,
 }
@@ -89,6 +95,32 @@ enum S2Commands {
 
         #[arg(short, long, default_value_t = OutputFormat::CSV, help = "By default, outputs each cell ID on separate lines.")]
         format: OutputFormat,
+
+        #[arg(short, long, help = "Max number of S2 cells to return.")]
+        max_num_s2_cells: Option<usize>,
+    },
+
+    #[command(arg_required_else_help = true)]
+    Cut {
+        #[arg(
+            last = true,
+            help = "A valid WKT string encoding some geometry that will be subdivided."
+        )]
+        wkt: MaybeStdin<String>,
+
+        #[arg(
+            short,
+            long,
+            default_value_t = 12,
+            help = "The S2 cell level at which to perform the covering."
+        )]
+        level: u8,
+
+        #[arg(short, long, default_value_t = OutputFormat::CSV, help = "By default, outputs each cell ID on separate lines.")]
+        format: OutputFormat,
+
+        #[arg(short, long, help = "Max number of S2 cells to return.")]
+        max_num_s2_cells: Option<usize>,
     },
 }
 
@@ -193,7 +225,7 @@ impl Display for SplitStrategy {
  * Computes an S2 cell covering of the given geometry by first computing a bounding box and then
  * covering the bounding box. This is efficient but imprecise.
  */
-fn get_s2_covering(geometry: Geometry, level: u8, max_cells: usize) -> Vec<CellID> {
+fn get_s2_covering(geometry: &Geometry, level: u8, max_cells: usize) -> Vec<CellID> {
     let bbox = geometry.bounding_rect().unwrap();
     let pmin: Point = <Coord as Into<Point>>::into(bbox.min()).to_radians();
     let pmax: Point = <Coord as Into<Point>>::into(bbox.max()).to_radians();
@@ -306,6 +338,39 @@ fn partition_region(
     GeometryCollection::new_from(partitions)
 }
 
+fn s2_cell_to_poly(cell: Cell) -> Polygon {
+    let vertices: [Coord; 4] = cell
+        .vertices()
+        .map(LatLng::from)
+        .map(|c| Coord{
+            x: c.lat.deg(), 
+            y: c.lng.deg(),
+        });
+    polygon!(vertices[0], vertices[1], vertices[2], vertices[3])
+}
+
+fn cut_region(polygon: Polygon, s2_cells: Vec<Cell>) -> GeometryCollection {
+    let cuts = s2_cells
+        .into_iter()
+        .map(s2_cell_to_poly)
+        .map(|p| p.intersection(&polygon))
+        .map(Geometry::from)
+        .collect_vec();
+
+    GeometryCollection::new_from(cuts)
+}
+
+fn fmt_geometry(fmt: &OutputFormat, gc: GeometryCollection) {
+    match fmt {
+        OutputFormat::CSV => {
+            gc.iter().for_each(|p| println!("{}", p.wkt_string()));
+        }
+        OutputFormat::Oneline => {
+            println!("{}", gc.wkt_string());
+        }
+    }
+}
+
 fn collect_args() -> Vec<String> {
     // Args read from the commandline.
     let mut args: Vec<String> = std::env::args().collect();
@@ -335,6 +400,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     level,
                     s2_cell_format,
                     format,
+                    max_num_s2_cells,
                 }) => {
                     let fmt_cell = |c: CellID| match s2_cell_format {
                         S2CellFormat::Long => format!("{}", c.0),
@@ -342,8 +408,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                         S2CellFormat::Quad => format!("{:#?}", c),
                     };
 
+                    let max_num_s2_cells = max_num_s2_cells.unwrap_or(usize::max_value());
+
                     let geometry = Geometry::<f64>::try_from_wkt_str(wkt)?;
-                    let cover = get_s2_covering(geometry, *level, 128);
+                    let cover = get_s2_covering(&geometry, *level, max_num_s2_cells);
 
                     match format {
                         OutputFormat::Oneline => {
@@ -356,21 +424,29 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
 
+                // Cut a geometry by S2 cell regions.
+                Some(S2Commands::Cut {
+                    wkt,
+                    level,
+                    format,
+                    max_num_s2_cells,
+                }) => {
+                    let max_num_s2_cells = max_num_s2_cells.unwrap_or(usize::max_value());
+                    let geometry = Geometry::<f64>::try_from_wkt_str(wkt)?;
+                    let cover = get_s2_covering(&geometry, *level, max_num_s2_cells)
+                        .into_iter()
+                        .map(Cell::from)
+                        .collect_vec();
+                    let cuts = cut_region(geometry.try_into()?, cover);
+                    fmt_geometry(format, cuts);
+                }
+
                 None => {}
             }
         }
 
         // Commands that input/output WKT geometries.
         Some(Commands::Geom(geom)) => {
-            let fmt_geometry = |fmt: &OutputFormat, gc: GeometryCollection| match fmt {
-                OutputFormat::CSV => {
-                    gc.iter().for_each(|p| println!("{}", p.wkt_string()));
-                }
-                OutputFormat::Oneline => {
-                    println!("{}", gc.wkt_string());
-                }
-            };
-
             match &geom.command {
                 // Split geometry.
                 Some(GeomCommands::Split {
@@ -400,7 +476,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         Some(Commands::Rand(rand)) => {
-            let mut rng = create_rng(128);
+            let mut rng = create_rng(rand.seed);
 
             match &rand.command {
                 Some(RandCommands::Point {
@@ -428,15 +504,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         .map(Geometry::from)
                         .collect();
 
-                    match format {
-                        OutputFormat::CSV => {
-                            samples.iter().for_each(|p| println!("{}", p.wkt_string()))
-                        }
-
-                        OutputFormat::Oneline => {
-                            println!("{}", GeometryCollection::new_from(samples).wkt_string())
-                        }
-                    }
+                    fmt_geometry(format, GeometryCollection::new_from(samples));
                 }
 
                 None => {}
