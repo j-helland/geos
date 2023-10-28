@@ -10,6 +10,9 @@ use wkt::TryFromWkt;
 use crate::format::{fmt_geometry, OutputFormat};
 use crate::geom::partition_region;
 
+//==================================================
+// CLI spec.
+//==================================================
 #[derive(Debug, Args)]
 #[command(about = "General geometry commands.")]
 #[command(args_conflicts_with_subcommands = false)]
@@ -56,9 +59,9 @@ pub enum GeomCommands {
     },
 }
 
-/**
- * Commands that operate primarily on geometries.
- */
+//==================================================
+// Core subcommand logic.
+//==================================================
 pub fn handle_geom_subcommand(geom: &GeomArgs) -> Result<(), Box<dyn Error>> {
     match &geom.command {
         // Split geometry.

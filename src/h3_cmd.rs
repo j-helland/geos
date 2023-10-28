@@ -11,6 +11,9 @@ use wkt::TryFromWkt;
 
 use crate::format::{fmt_value_enum, OutputFormat};
 
+//==================================================
+// CLI spec.
+//==================================================
 #[derive(Debug, Args)]
 #[command(about = "Commands related to H3 cells.")]
 #[command(args_conflicts_with_subcommands = false)]
@@ -88,6 +91,9 @@ impl Display for H3CellFormat {
     }
 }
 
+//==================================================
+// Core logic for subcommands.
+//==================================================
 pub fn handle_h3_subcommand(h3: &H3Args) -> Result<(), Box<dyn Error>> {
     match &h3.command {
         Some(H3Commands::Cover {
@@ -121,6 +127,9 @@ pub fn handle_h3_subcommand(h3: &H3Args) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+//==================================================
+// Geometry utils
+//==================================================
 fn get_h3_covering(
     geometry: Geometry,
     resolution: Resolution,

@@ -7,6 +7,9 @@ use wkt::TryFromWkt;
 use crate::format::{fmt_geometry, OutputFormat};
 use crate::samplers::{create_rng, GeoSampler, PolygonalSampler, UniformSampler};
 
+//==================================================
+// CLI spec.
+//==================================================
 #[derive(Debug, Args)]
 #[command(about = "Commands involving RNG.")]
 #[command(args_conflicts_with_subcommands = false)]
@@ -38,9 +41,9 @@ pub enum RandCommands {
     },
 }
 
-/**
- * Commands that operate primarily on RNG.
- */
+//==================================================
+// Core subcommand logic.
+//==================================================
 pub fn handle_rand_subcommand(rand: &RandArgs) -> Result<(), Box<dyn Error>> {
     let mut rng = create_rng(rand.seed);
 

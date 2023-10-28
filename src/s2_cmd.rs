@@ -11,6 +11,9 @@ use wkt::TryFromWkt;
 
 use crate::format::{fmt_geometry, fmt_value_enum, OutputFormat};
 
+//==================================================
+// CLI spec.
+//==================================================
 #[derive(Debug, Args)]
 #[command(about = "Commands related to S2 cells.")]
 #[command(args_conflicts_with_subcommands = false)]
@@ -84,9 +87,9 @@ impl Display for S2CellFormat {
     }
 }
 
-/**
- * Commands that operate primarily on S2 cells.
- */
+//==================================================
+// Core subcommand logic.
+//==================================================
 pub fn handle_s2_subcommand(s2: &S2Args) -> Result<(), Box<dyn Error>> {
     match &s2.command {
         // Cover geometry.
@@ -144,6 +147,9 @@ pub fn handle_s2_subcommand(s2: &S2Args) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+//==================================================
+// Geometry utils.
+//==================================================
 /**
  * Computes an S2 cell covering of the given geometry by first computing a bounding box and then
  * covering the bounding box. This is efficient but imprecise.
