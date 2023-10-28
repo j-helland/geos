@@ -62,8 +62,8 @@ pub fn cut_region(polygon: &Polygon, s2_cells: &Vec<Cell>) -> Vec<Polygon> {
     s2_cells
         .iter()
         .map(s2_cell_to_poly)
-        //// We want each distinct polygon separated. No multipolygons.
-        //.flat_map(|p| p.intersection(&polygon).into_iter())
+        // We want each distinct polygon separated. No multipolygons.
+        .flat_map(|p| p.intersection(&polygon).into_iter())
         .collect_vec()
 }
 
