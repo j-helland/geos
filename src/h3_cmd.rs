@@ -1,18 +1,16 @@
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::str::FromStr;
 
 use clap::{command, Args, Subcommand, ValueEnum};
 use clap_stdin::MaybeStdin;
-use geo::{coord, polygon, BoundingRect, Geometry, LineString, Point, Polygon};
-use h3o::error::InvalidLatLng;
+use geo::{Geometry, Point, Polygon};
+
 use h3o::geom::{ContainmentMode, PolyfillConfig, ToCells};
 use h3o::{CellIndex, LatLng, Resolution};
 use itertools::Itertools;
 use wkt::TryFromWkt;
 
-use crate::format::{fmt_geometry, fmt_value_enum, OutputFormat};
-use crate::geom::{cut_region, get_s2_covering};
+use crate::format::{fmt_value_enum, OutputFormat};
 
 #[derive(Debug, Args)]
 #[command(about = "Commands related to H3 cells.")]
@@ -127,31 +125,25 @@ fn get_h3_covering(
     match geometry {
         // Point and point composite types.
         Geometry::Point(point) => get_h3_point_covering(point, resolution).map(|p| vec![p]),
-        Geometry::MultiPoint(mpoint) => {
-            mpoint
-                .into_iter()
-                .map(|p| get_h3_point_covering(p, resolution))
-                .collect::<Result<Vec<CellIndex>, _>>()
-        }
+        Geometry::MultiPoint(mpoint) => mpoint
+            .into_iter()
+            .map(|p| get_h3_point_covering(p, resolution))
+            .collect::<Result<Vec<CellIndex>, _>>(),
 
         // Polygon and polygon composite types.
         Geometry::Polygon(poly) => get_h3_polygon_covering(poly, resolution, mode),
-        Geometry::MultiPolygon(mpoly) => {
-            mpoly
-                .into_iter()
-                .map(|p| get_h3_polygon_covering(p, resolution, mode))
-                .flatten_ok()
-                .collect::<Result<Vec<CellIndex>, _>>()
-        }
+        Geometry::MultiPolygon(mpoly) => mpoly
+            .into_iter()
+            .map(|p| get_h3_polygon_covering(p, resolution, mode))
+            .flatten_ok()
+            .collect::<Result<Vec<CellIndex>, _>>(),
 
         // Recurse on geometry collection.
-        Geometry::GeometryCollection(collection) => {
-            collection
-                .into_iter()
-                .map(|g| get_h3_covering(g, resolution, mode))
-                .flatten_ok()
-                .collect::<Result<Vec<CellIndex>, _>>()
-        }
+        Geometry::GeometryCollection(collection) => collection
+            .into_iter()
+            .map(|g| get_h3_covering(g, resolution, mode))
+            .flatten_ok()
+            .collect::<Result<Vec<CellIndex>, _>>(),
 
         // Default to trying a polygon conversion for the remaining geometries.
         _ => get_h3_polygon_covering(geometry.try_into()?, resolution, mode),
