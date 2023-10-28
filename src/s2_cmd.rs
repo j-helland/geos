@@ -7,7 +7,7 @@ use geo::{BooleanOps, BoundingRect, Point, Polygon};
 use geo_types::{polygon, Coord, Geometry};
 use itertools::Itertools;
 use s2::{cell::Cell, cellid::CellID, latlng::LatLng};
-use wkt::TryFromWkt;
+use wkt::{TryFromWkt, ToWkt};
 
 use crate::format::{fmt_geometry, fmt_value_enum, OutputFormat};
 
@@ -72,6 +72,12 @@ pub enum S2Commands {
 
         #[arg(short, long, help = "Max number of S2 cells to return.")]
         max_num_s2_cells: Option<usize>,
+    },
+
+    #[command(arg_required_else_help = true)]
+    CellToPoly {
+        #[arg(last = true, help = "A valid S2 cell index.")]
+        cell: String,
     },
 }
 
@@ -140,6 +146,12 @@ pub fn handle_s2_subcommand(s2: &S2Args) -> Result<(), Box<dyn Error>> {
                 .map(Geometry::from)
                 .collect_vec();
             fmt_geometry(format, cuts);
+        }
+
+        Some(S2Commands::CellToPoly { cell }) => {
+            let cell_id = CellID{ 0: cell.parse()? };
+            let poly = s2_cell_to_poly(&cell_id.into());
+            println!("{}", poly.wkt_string());
         }
 
         None => {}
