@@ -11,7 +11,9 @@ clap = { version = "4.4.6", features = ["derive"] }
 clap-stdin = "0.2.1"
 geo = "0.26.0"
 geo-types = "0.7.11"
+h3o = { version = "0.4.0", features = ["geo"] }
 itertools = "0.11.0"
+polyfit-rs = "0.2.1"
 rand = "0.8.5"
 s2 = "0.0.12"
 weighted_rand = "0.4.2"

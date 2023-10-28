@@ -1,13 +1,14 @@
 use std::error::Error;
+use std::fmt::{Display, Formatter};
 
-use clap::{command, Args, Subcommand};
+use clap::{command, Args, Subcommand, ValueEnum};
 use clap_stdin::MaybeStdin;
 use geo_types::Geometry;
 use itertools::Itertools;
 use s2::{cell::Cell, cellid::CellID};
 use wkt::TryFromWkt;
 
-use crate::format::{fmt_geometry, OutputFormat, S2CellFormat};
+use crate::format::{fmt_geometry, fmt_value_enum, OutputFormat};
 use crate::geom::{cut_region, get_s2_covering};
 
 #[derive(Debug, Args)]
@@ -33,11 +34,11 @@ pub enum S2Commands {
             short,
             long,
             default_value_t = 12,
-            help = "The S2 cell level at which to perform the covering."
+            help = "The S2 cell level [1, 30] at which to perform the covering."
         )]
         level: u8,
 
-        #[arg(short, long, default_value_t = S2CellFormat::Long, help = "Format for the S2 cell IDs.")]
+        #[arg(long, default_value_t = S2CellFormat::Long, help = "Format for the S2 cell IDs.")]
         s2_cell_format: S2CellFormat,
 
         #[arg(short, long, default_value_t = OutputFormat::CSV, help = "By default, outputs each cell ID on separate lines.")]
@@ -69,6 +70,18 @@ pub enum S2Commands {
         #[arg(short, long, help = "Max number of S2 cells to return.")]
         max_num_s2_cells: Option<usize>,
     },
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum S2CellFormat {
+    Long,
+    Hex,
+    Quad,
+}
+impl Display for S2CellFormat {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        fmt_value_enum(self, f)
+    }
 }
 
 /**
