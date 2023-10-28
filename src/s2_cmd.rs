@@ -3,13 +3,13 @@ use std::fmt::{Display, Formatter};
 
 use clap::{command, Args, Subcommand, ValueEnum};
 use clap_stdin::MaybeStdin;
-use geo_types::Geometry;
+use geo::{BooleanOps, BoundingRect, Point, Polygon};
+use geo_types::{polygon, Coord, Geometry};
 use itertools::Itertools;
-use s2::{cell::Cell, cellid::CellID};
+use s2::{cell::Cell, cellid::CellID, latlng::LatLng};
 use wkt::TryFromWkt;
 
 use crate::format::{fmt_geometry, fmt_value_enum, OutputFormat};
-use crate::geom::{cut_region, get_s2_covering};
 
 #[derive(Debug, Args)]
 #[command(about = "Commands related to S2 cells.")]
@@ -132,7 +132,7 @@ pub fn handle_s2_subcommand(s2: &S2Args) -> Result<(), Box<dyn Error>> {
                 .into_iter()
                 .map(Cell::from)
                 .collect_vec();
-            let cuts = cut_region(&geometry.try_into()?, &cover)
+            let cuts = cut_region(geometry.try_into()?, &cover)
                 .into_iter()
                 .map(Geometry::from)
                 .collect_vec();
@@ -142,4 +142,48 @@ pub fn handle_s2_subcommand(s2: &S2Args) -> Result<(), Box<dyn Error>> {
         None => {}
     }
     Ok(())
+}
+
+/**
+ * Computes an S2 cell covering of the given geometry by first computing a bounding box and then
+ * covering the bounding box. This is efficient but imprecise.
+ */
+fn get_s2_covering(geometry: &Geometry, level: u8, max_cells: usize) -> Vec<CellID> {
+    let bbox = geometry.bounding_rect().unwrap();
+    let pmin: Point = bbox.min().try_into().unwrap();
+    let pmax: Point = bbox.max().try_into().unwrap();
+    let region = s2::rect::Rect::from_degrees(pmin.y(), pmin.x(), pmax.y(), pmax.x());
+
+    // compute covering of the bounding box.
+    let rc = s2::region::RegionCoverer {
+        min_level: level,
+        max_level: level,
+        level_mod: 1,
+        max_cells,
+    };
+    rc.covering(&region).0
+}
+
+/**
+ * Creates a polygon from the vertices of an S2 cell.
+ */
+fn s2_cell_to_poly(cell: &Cell) -> Polygon {
+    let vertices: [Coord; 4] = cell.vertices().map(LatLng::from).map(|c| Coord {
+        x: c.lng.deg(),
+        y: c.lat.deg(),
+    });
+    polygon!(vertices[0], vertices[1], vertices[2], vertices[3])
+}
+
+/**
+ * Cuts a region using S2 cells. Each returned geometry in the collection will be a partition of
+ * the geometry bounded to a passed in S2 cell.
+ */
+fn cut_region(polygon: Polygon, s2_cells: &Vec<Cell>) -> Vec<Polygon> {
+    s2_cells
+        .iter()
+        .map(s2_cell_to_poly)
+        // We want each distinct polygon separated. No multipolygons.
+        .flat_map(|p| p.intersection(&polygon).into_iter())
+        .collect_vec()
 }

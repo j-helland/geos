@@ -4,7 +4,6 @@ use std::fmt::{Display, Formatter};
 use clap::{command, Args, Subcommand, ValueEnum};
 use clap_stdin::MaybeStdin;
 use geo::{Geometry, Point, Polygon};
-
 use h3o::geom::{ContainmentMode, PolyfillConfig, ToCells};
 use h3o::{CellIndex, LatLng, Resolution};
 use itertools::Itertools;
@@ -39,7 +38,12 @@ pub enum H3Commands {
         )]
         level: u8,
 
-        #[arg(short, long, default_value_t = H3CoveringMode(ContainmentMode::IntersectsBoundary), help = "Mode for the polyfill algorithm. By default, this will choose the minimal covering that completely contains the argument WKT geometry.")]
+        #[arg(
+            short,
+            long,
+            default_value_t = H3CoveringMode(ContainmentMode::IntersectsBoundary),
+            help = "Mode for the polyfill algorithm. By default, this will choose the minimal covering that completely contains the geometry."
+        )]
         mode: H3CoveringMode,
 
         #[arg(long, default_value_t = H3CellFormat::Hex, help = "The output format for H3 cells.")]

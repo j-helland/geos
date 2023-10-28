@@ -1,7 +1,5 @@
-use geo::{Area, BooleanOps, BoundingRect, Intersects, Point, Polygon, Rect};
-use geo_types::{polygon, Coord, Geometry, Line};
-use itertools::Itertools;
-use s2::{cell::Cell, cellid::CellID, latlng::LatLng};
+use geo::{Area, BooleanOps, BoundingRect, Intersects, Polygon, Rect};
+use geo_types::{Coord, Line};
 
 use crate::nvec::NVec;
 
@@ -21,50 +19,6 @@ pub fn lerp(t: f64, c1: Coord, c2: Coord) -> Coord {
     let nv = (1.0 / (nv.norm() + 1e-8)) * nv;
 
     nv.into()
-}
-
-/**
- * Computes an S2 cell covering of the given geometry by first computing a bounding box and then
- * covering the bounding box. This is efficient but imprecise.
- */
-pub fn get_s2_covering(geometry: &Geometry, level: u8, max_cells: usize) -> Vec<CellID> {
-    let bbox = geometry.bounding_rect().unwrap();
-    let pmin: Point = bbox.min().try_into().unwrap();
-    let pmax: Point = bbox.max().try_into().unwrap();
-    let region = s2::rect::Rect::from_degrees(pmin.y(), pmin.x(), pmax.y(), pmax.x());
-
-    // compute covering of the bounding box.
-    let rc = s2::region::RegionCoverer {
-        min_level: level,
-        max_level: level,
-        level_mod: 1,
-        max_cells,
-    };
-    rc.covering(&region).0
-}
-
-/**
- * Creates a polygon from the vertices of an S2 cell.
- */
-pub fn s2_cell_to_poly(cell: &Cell) -> Polygon {
-    let vertices: [Coord; 4] = cell.vertices().map(LatLng::from).map(|c| Coord {
-        x: c.lng.deg(),
-        y: c.lat.deg(),
-    });
-    polygon!(vertices[0], vertices[1], vertices[2], vertices[3])
-}
-
-/**
- * Cuts a region using S2 cells. Each returned geometry in the collection will be a partition of
- * the geometry bounded to a passed in S2 cell.
- */
-pub fn cut_region(polygon: &Polygon, s2_cells: &Vec<Cell>) -> Vec<Polygon> {
-    s2_cells
-        .iter()
-        .map(s2_cell_to_poly)
-        // We want each distinct polygon separated. No multipolygons.
-        .flat_map(|p| p.intersection(&polygon).into_iter())
-        .collect_vec()
 }
 
 /**
