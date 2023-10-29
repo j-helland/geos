@@ -3,13 +3,14 @@ use std::fmt::{Display, Formatter};
 
 use clap::{command, Args, Subcommand, ValueEnum};
 use clap_stdin::MaybeStdin;
-use geo::{BooleanOps, BoundingRect, Point, Polygon};
+use geo::{BoundingRect, Point, Polygon};
 use geo_types::{polygon, Coord, Geometry};
 use itertools::Itertools;
 use s2::{cell::Cell, cellid::CellID, latlng::LatLng};
-use wkt::{TryFromWkt, ToWkt};
+use wkt::{ToWkt, TryFromWkt};
 
 use crate::format::{fmt_geometry, fmt_value_enum, OutputFormat};
+use crate::geom::cut_polygon;
 
 //==================================================
 // CLI spec.
@@ -76,7 +77,10 @@ pub enum S2Commands {
 
     #[command(arg_required_else_help = true)]
     CellToPoly {
-        #[arg(last = true, help = "A valid S2 cell index.")]
+        #[arg(
+            last = true,
+            help = "A valid S2 cell index. Only long values are accepted."
+        )]
         cell: String,
     },
 }
@@ -149,7 +153,7 @@ pub fn handle_s2_subcommand(s2: &S2Args) -> Result<(), Box<dyn Error>> {
         }
 
         Some(S2Commands::CellToPoly { cell }) => {
-            let cell_id = CellID{ 0: cell.parse()? };
+            let cell_id = CellID { 0: cell.parse()? };
             let poly = s2_cell_to_poly(&cell_id.into());
             println!("{}", poly.wkt_string());
         }
@@ -198,10 +202,6 @@ fn s2_cell_to_poly(cell: &Cell) -> Polygon {
  * the geometry bounded to a passed in S2 cell.
  */
 fn cut_region(polygon: Polygon, s2_cells: &Vec<Cell>) -> Vec<Polygon> {
-    s2_cells
-        .iter()
-        .map(s2_cell_to_poly)
-        // We want each distinct polygon separated. No multipolygons.
-        .flat_map(|p| p.intersection(&polygon).into_iter())
-        .collect_vec()
+    let partitions = s2_cells.iter().map(s2_cell_to_poly).collect_vec();
+    cut_polygon(&polygon, &partitions)
 }

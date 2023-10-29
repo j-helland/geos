@@ -1,7 +1,22 @@
 use geo::{Area, BooleanOps, BoundingRect, Intersects, Polygon, Rect};
 use geo_types::{Coord, Line};
+use itertools::Itertools;
 
 use crate::nvec::NVec;
+
+/**
+ * Cuts a polygon by intersection with partitions represented as polygons.
+ *
+ * There is no strict requirement that the partitions actually be mathematical
+ * partitions, although that is the intended use-case.
+ */
+pub fn cut_polygon(polygon: &Polygon, partitions: &Vec<Polygon>) -> Vec<Polygon> {
+    partitions
+        .iter()
+        .map(|p| p.intersection(polygon))
+        .flatten()
+        .collect_vec()
+}
 
 /**
  * Linearly interpolate between two geographic coordinates.
