@@ -51,6 +51,15 @@ A geometry can be cut by an S2 grid at a given level.
 
 The `-f oneline` arg will merge the geometries resulting from the cut into a single line `GEOMETRYCOLLECTION`. Otherwise, each constituent polygon will be printed on a separate line.
 
+### `cell-to-poly`
+
+To convert an S2 cell into a polygon representation:
+```bash
+> geos s2 cell-to-poly -- 9263763445025603584
+
+POLYGON((-122.39009006966613 37.769200437923466,-122.39009006966613 37.76800891143169,-122.38867383494343 37.76844387567673,-122.38867383494343 37.76963540683453,-122.39009006966613 37.769200437923466))
+```
+
 
 ## `h3` Commands
 
@@ -68,6 +77,15 @@ A geometry can be cut by an H3 grid at a given resolution. This is analogous to 
 :----------------:|:----------------:
 <img src="./artifacts/h3-cut-3.png" alt="drawing" width="420"/> | <img src="./artifacts/h3-cut-5.png" alt="drawing" width="400"/>
 
+### `cell-to-poly`
+
+To convert an H3 cell into a polygon representation:
+
+```bash
+> geos h3 cell-to-poly -- 81703ffffffffff
+
+POLYGON((-173.38014762578527 7.9727938308414075,-174.31673738369324 3.8210244943304392,-171.37544324872502 0.6498705655763978,-167.31261713417402 1.5147974903819605,-166.16940101623453 5.76714668637842,-169.2931299839693 9.060308038526605,-173.38014762578527 7.9727938308414075))
+```
 
 
 ## `geom` commands
@@ -134,12 +152,3 @@ You can get fancier and restrict the sampling to a geometry. The sampling algori
 ```
 
 <img src="./artifacts/rand-in-geom.png" alt="drawing" width="420"/>
-
-### `cell-to-poly`
-
-In case you want to convert an S2 cell into a polygon representation:
-```bash
-> geos s2 cell-to-poly -- 9263763445025603584
-
-POLYGON((-122.39009006966613 37.769200437923466,-122.39009006966613 37.76800891143169,-122.38867383494343 37.76844387567673,-122.38867383494343 37.76963540683453,-122.39009006966613 37.769200437923466))
-```
