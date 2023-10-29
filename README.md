@@ -65,6 +65,49 @@ POLYGON((-122.39009006966613 37.769200437923466,-122.39009006966613 37.768008911
 
 These commands work with [H3 cells](https://h3geo.org).
 
+### `cover`
+
+Similarly to the [S2 cover command](#cover), you can cover geometries with H3 cells at a given level:
+
+```bash
+> geos h3 cover -l 3 -- "POLYGON ((-106.369629 39.588757, -104.864502 40.32142, -104.886475 38.985033, -102.359619 39.918163, -105.545654 37.701207, -105.611572 39.385264, -107.995605 38.719805, -107.567139 40.472024, -106.369629 39.588757))"
+```
+
+Various covering modes exist. The default is to compute the minimal covering that fully contains the geometry. Some use-cases like geometry approximation may instead prefer to only include cells whose centroid is contained in the geometry via the `-m centroid` argument. 
+
+`geos h3 cover -l 3` | `geos h3 cover -l 4 -m centroid`
+:-------------------:|:-------------------------------:
+<img src="./artifacts/h3-cover.png" alt="drawing" width="375"/> | <img src="./artifacts/h3-cover-centroid.png" alt="drawing" width="420"/>
+
+
+### `compact`
+
+```bash
+> geos h3 compact
+```
+
+This command allows for cell compaction (iterative pruning of full H3 branches) via `--compact`, which is invertible using the [uncompact command](#uncompact). The intended use-case for H3 cell compaction is to compress an approximated geometry for sending over a wire.
+
+`geos h3 cover -l 5 --compact` |
+:-:
+<img src="./artifacts/h3-cover-compact.png" alt="drawing" width="420"/>
+
+Note that the compaction of a full covering (default covering mode) may no longer completely cover the geometry, as can be seen in the image above upon close inspection. This is due to a fundamental property of hexagons, which cannot be perfectly subdivided into sub-hexagons (contrast this to a quad tree like S2, where quads are always perfectly divisible into smaller quads). The consequence of this is that H3 compaction is not generally suitable for use-cases like request fanout to a spatial API; the gaps between H3 cells at disparate levels can result in missed data. Such applications should prefer S2 cells instead.
+
+
+### `uncompact`
+
+This is the inverse of the [compact command](#compact).
+
+```bash
+# Get some cells.
+> geos h3 cover -l 5 -f oneline -- "POLYGON ((-106.369629 39.588757, -104.864502 40.32142, -104.886475 38.985033, -102.359619 39.918163, -105.545654 37.701207, -105.611572 39.385264, -107.995605 38.719805, -107.567139 40.472024, -106.369629 39.588757))" > cover.txt
+
+# Noop
+> cat cover.txt | geos h3 compact -f oneline -- | geos h3 uncompact -l 5 -f oneline --
+```
+
+
 ### `cut`
 
 A geometry can be cut by an H3 grid at a given resolution. This is analogous to the [S2 cut command](#cut).

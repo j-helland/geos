@@ -5,7 +5,7 @@ use std::str::FromStr;
 use clap::{command, Args, Subcommand, ValueEnum};
 use clap_stdin::MaybeStdin;
 use geo::{BooleanOps, Geometry, LineString, Point, Polygon};
-use geo_types::{coord};
+use geo_types::coord;
 use h3o::geom::{ContainmentMode, PolyfillConfig, ToCells};
 use h3o::{CellIndex, LatLng, Resolution};
 use itertools::Itertools;
@@ -51,10 +51,19 @@ pub enum H3Commands {
         )]
         mode: H3CoveringMode,
 
-        #[arg(long, default_value_t = H3CellFormat::Hex, help = "The output format for H3 cells.")]
+        #[arg(
+            long,
+            default_value_t = H3CellFormat::Hex,
+            help = "The output format for H3 cells."
+        )]
         h3_cell_format: H3CellFormat,
 
-        #[arg(short, long, default_value_t = OutputFormat::CSV, help = "By default, outputs each cell ID on separate lines.")]
+        #[arg(
+            short,
+            long,
+            default_value_t = OutputFormat::CSV,
+            help = "By default, outputs each cell ID on separate lines."
+        )]
         format: OutputFormat,
     },
 
@@ -74,7 +83,12 @@ pub enum H3Commands {
         )]
         level: u8,
 
-        #[arg(short, long, default_value_t = OutputFormat::CSV, help = "By default, outputs each cell ID on separate lines.")]
+        #[arg(
+            short,
+            long,
+            default_value_t = OutputFormat::CSV,
+            help = "By default, outputs each cell ID on separate lines."
+        )]
         format: OutputFormat,
     },
 
@@ -82,6 +96,59 @@ pub enum H3Commands {
     CellToPoly {
         #[arg(last = true, help = "A valid H3 cell index.")]
         cell: String,
+    },
+
+    #[command(arg_required_else_help = true)]
+    Compact {
+        #[arg(
+            last = true,
+            num_args = 1..,
+            use_value_delimiter = true,
+            value_delimiter = ',',
+            help = "A comma-separated list of H3 cell indices to compact."
+        )]
+        cells: Vec<String>,
+
+        #[arg(
+            long,
+            default_value_t = H3CellFormat::Hex,
+            help = "The output format for H3 cells."
+        )]
+        h3_cell_format: H3CellFormat,
+
+        #[arg(
+            short,
+            long,
+            default_value_t = OutputFormat::CSV,
+            help = "By default, outputs each cell ID on separate lines."
+        )]
+        format: OutputFormat,
+    },
+
+    #[command(arg_required_else_help = true)]
+    Uncompact {
+        #[arg(
+            last = true,
+            num_args = 1..,
+            use_value_delimiter = true,
+            value_delimiter = ',',
+            help = "A comma-separated list of H3 cell indices to uncompact."
+        )]
+        cells: Vec<String>,
+
+        #[arg(short, long, help = "The H3 cell level at which to uncompact to.")]
+        level: u8,
+
+        #[arg(long, default_value_t = H3CellFormat::Hex, help = "The output format for H3 cells.")]
+        h3_cell_format: H3CellFormat,
+
+        #[arg(
+            short,
+            long,
+            default_value_t = OutputFormat::CSV,
+            help = "By default, outputs each cell ID on separate lines."
+        )]
+        format: OutputFormat,
     },
 }
 
@@ -122,6 +189,14 @@ impl Display for H3CellFormat {
 //==================================================
 // Core logic for subcommands.
 //==================================================
+fn fmt_cell(format: &H3CellFormat, c: &CellIndex) -> String {
+    match &format {
+        H3CellFormat::Hex => format!("{}", c),
+        H3CellFormat::Octal => format!("{:o}", c),
+        H3CellFormat::Binary => format!("{:b}", c),
+    }
+}
+
 pub fn handle_h3_subcommand(h3: &H3Args) -> Result<(), Box<dyn Error>> {
     match &h3.command {
         Some(H3Commands::Cover {
@@ -131,19 +206,14 @@ pub fn handle_h3_subcommand(h3: &H3Args) -> Result<(), Box<dyn Error>> {
             h3_cell_format,
             format,
         }) => {
-            let fmt_cell = |c: CellIndex| match &h3_cell_format {
-                H3CellFormat::Hex => format!("{}", c),
-                H3CellFormat::Octal => format!("{:o}", c),
-                H3CellFormat::Binary => format!("{:b}", c),
-            };
-
             // convenience shadow copies
             let mode: ContainmentMode = (*mode).into();
             let resolution = Resolution::try_from(*level)?;
             let geometry = Geometry::<f64>::try_from_wkt_str(wkt)?;
-
             let cells = get_h3_covering(&geometry, resolution, mode)?;
-            let mut cells = cells.into_iter().map(fmt_cell);
+
+            // Output
+            let mut cells = cells.iter().map(|c| fmt_cell(h3_cell_format, c));
             match &format {
                 OutputFormat::Oneline => println!("{}", cells.join(",")),
                 OutputFormat::CSV => cells.for_each(|c| println!("{}", c)),
@@ -166,6 +236,50 @@ pub fn handle_h3_subcommand(h3: &H3Args) -> Result<(), Box<dyn Error>> {
             let cell = CellIndex::from_str(cell)?;
             let poly = h3_cell_to_poly(&cell);
             println!("{}", poly.wkt_string());
+        }
+
+        Some(H3Commands::Compact {
+            cells,
+            h3_cell_format,
+            format,
+        }) => {
+            let cells: Vec<CellIndex> = cells
+                .into_iter()
+                .map(|s| s.as_str())
+                .map(CellIndex::from_str)
+                .try_collect()?;
+            let cells_compacted = CellIndex::compact(cells)?.collect_vec();
+
+            // Output
+            let mut cells_compacted = cells_compacted.iter().map(|c| fmt_cell(h3_cell_format, c));
+            match &format {
+                OutputFormat::Oneline => println!("{}", cells_compacted.join(",")),
+                OutputFormat::CSV => cells_compacted.for_each(|c| println!("{}", c)),
+            }
+        }
+
+        Some(H3Commands::Uncompact {
+            cells,
+            level,
+            h3_cell_format,
+            format,
+        }) => {
+            let resolution = Resolution::try_from(*level)?;
+            let cells: Vec<CellIndex> = cells
+                .into_iter()
+                .map(|s| s.as_str())
+                .map(CellIndex::from_str)
+                .try_collect()?;
+            let cells_uncompacted = CellIndex::uncompact(cells, resolution).collect_vec();
+
+            // Output
+            let mut cells_uncompacted = cells_uncompacted
+                .iter()
+                .map(|c| fmt_cell(h3_cell_format, c));
+            match &format {
+                OutputFormat::Oneline => println!("{}", cells_uncompacted.join(",")),
+                OutputFormat::CSV => cells_uncompacted.for_each(|c| println!("{}", c)),
+            }
         }
 
         None => {}
