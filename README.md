@@ -2,7 +2,7 @@
 
 `geos` is a CLI tool that provides some geometric commands that I personally find useful. For example, I frequently find myself wanting to do various operations on S2 cells without opening a debugger.
 
-GeoS formally stands for **Geo Stuff** and **Geo Shit** colloquially.
+GeoS stands for **Geo Stuff** formally and **Geo Shit** colloquially.
 
 # Installation
 
@@ -19,7 +19,7 @@ Many commands use [WKT format](https://en.wikipedia.org/wiki/Well-known_text_rep
 
 ## `s2` commands
 
-These commands work with S2 cells.
+These commands work with [S2 cells](https://s2geometry.io/).
 
 ### `cover`
 
@@ -50,6 +50,24 @@ A geometry can be cut by an S2 grid at a given level.
 <img src="./artifacts/cut.png" alt="drawing" width="420"/>
 
 The `-f oneline` arg will merge the geometries resulting from the cut into a single line `GEOMETRYCOLLECTION`. Otherwise, each constituent polygon will be printed on a separate line.
+
+
+## `h3` Commands
+
+These commands work with [H3 cells](https://h3geo.org).
+
+### `cut`
+
+A geometry can be cut by an H3 grid at a given resolution. This is analogous to the [S2 cut command](#cut).
+
+```bash
+> geos h3 cut
+```
+
+`geos h3 cut -l 3` | `geos h3 cut -l 5`
+:----------------:|:----------------:
+<img src="./artifacts/h3-cut-3.png" alt="drawing" width="420"/> | <img src="./artifacts/h3-cut-5.png" alt="drawing" width="400"/>
+
 
 
 ## `geom` commands
@@ -116,3 +134,12 @@ You can get fancier and restrict the sampling to a geometry. The sampling algori
 ```
 
 <img src="./artifacts/rand-in-geom.png" alt="drawing" width="420"/>
+
+### `cell-to-poly`
+
+In case you want to convert an S2 cell into a polygon representation:
+```bash
+> geos s2 cell-to-poly -- 9263763445025603584
+
+POLYGON((-122.39009006966613 37.769200437923466,-122.39009006966613 37.76800891143169,-122.38867383494343 37.76844387567673,-122.38867383494343 37.76963540683453,-122.39009006966613 37.769200437923466))
+```
